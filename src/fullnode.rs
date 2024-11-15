@@ -118,10 +118,12 @@ impl FullNode {
             .collect();
 
         let mut state = self.state.lock().await;
-        txs.into_iter().for_each(|tx| match state.process_tx(tx) {
-            Ok(_) => println!("Processed transaction"),
-            Err(e) => eprintln!("Error processing tx: {}", e),
-        });
+        for tx in txs {
+            match state.process_tx(tx).await {
+                Ok(_) => println!("Processed transaction"),
+                Err(e) => eprintln!("Error processing tx: {}", e),
+            }
+        }
     }
 
     async fn sync_from_genesis(self: Arc<Self>) -> Result<()> {

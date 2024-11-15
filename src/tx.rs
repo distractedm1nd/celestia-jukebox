@@ -1,6 +1,8 @@
 // use ed25519_dalek::{Signature as Ed25519Signature, Verifier, VerifyingKey};
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::process::Command;
 use std::time::Duration;
 
@@ -23,25 +25,34 @@ impl YoutubeLink {
         Self(url)
     }
 
-    pub fn get_video_duration(&self) -> Result<Duration> {
-        // Use yt-dlp to fetch video metadata
-        let output = Command::new("yt-dlp")
-            .args([
-                "--dump-json",   // Output video metadata as JSON
-                "--no-playlist", // Don't process playlists
-                self.0.as_str(),
-            ])
-            .output()
-            .context("Failed to execute yt-dlp")?;
+    pub async fn get_video_duration(&self) -> Result<Duration> {
+        // Create HTTP client
+        let client = reqwest::Client::new();
 
-        if !output.status.success() {
-            let error = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("yt-dlp failed: {}", error));
-        }
+        // Fetch video page
+        let response = client
+            .get(&self.0)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+            .send()
+            .await?
+            .text()
+            .await?;
 
-        let info: VideoInfo =
-            serde_json::from_slice(&output.stdout).context("Failed to parse yt-dlp output")?;
+        let re = Regex::new(r#"ytInitialPlayerResponse\s*=\s*(\{.+?\}\});"#).unwrap();
+        let json_str = re
+            .captures(&response)
+            .and_then(|caps| caps.get(1))
+            .ok_or_else(|| anyhow!("Could not find ytInitialPlayerResponse"))?
+            .as_str();
 
-        Ok(Duration::from_secs_f64(info.duration))
+        // Parse JSON and extract duration
+        let json: Value = serde_json::from_str(json_str)?;
+        let seconds_str = json["videoDetails"]["lengthSeconds"]
+            .as_str()
+            .ok_or_else(|| anyhow!("Could not find duration"))?;
+
+        // Parse seconds and create Duration
+        let seconds: u64 = seconds_str.parse()?;
+        Ok(Duration::from_secs(seconds))
     }
 }

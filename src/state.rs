@@ -62,7 +62,7 @@ impl State {
         Ok(())
     }
 
-    pub fn process_tx(&mut self, tx: Transaction) -> Result<()> {
+    pub async fn process_tx(&mut self, tx: Transaction) -> Result<()> {
         self.validate_tx(tx.clone())?;
 
         let new_start_time = self
@@ -73,7 +73,7 @@ impl State {
 
         // this can only be done because we only have one tx type rn
         let Transaction::AddToQueue { url } = tx;
-        let duration = url.get_video_duration()?;
+        let duration = url.get_video_duration().await?;
 
         self.queue.push_back(QueuedSong {
             start_time: new_start_time,
