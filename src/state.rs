@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::collections::VecDeque;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +10,6 @@ use crate::tx::YoutubeLink;
 #[derive(Clone, Serialize, Deserialize)]
 pub struct QueuedSong {
     pub start_time: SystemTime,
-    // TODO: Use the youtube API to get the duration of the song, otherwise this can be attacked!
     pub duration: Duration,
     pub link: YoutubeLink,
 }
@@ -20,6 +19,7 @@ pub struct State {
     pub queue: VecDeque<QueuedSong>,
 }
 
+#[allow(dead_code)]
 impl State {
     pub fn new() -> Self {
         State {

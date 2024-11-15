@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use celestia_types::nmt::Namespace;
 use std::{env, sync::Arc};
+use tx::YoutubeLink;
 
 mod fullnode;
 mod state;
@@ -9,8 +10,12 @@ mod webserver;
 
 use crate::fullnode::FullNode;
 
+#[macro_use]
+extern crate log;
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    pretty_env_logger::init();
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         print_usage();
@@ -20,7 +25,7 @@ async fn main() -> Result<()> {
     match args[1].as_str() {
         "start-fullnode" => {
             if args.len() < 4 {
-                println!("Error: start height and namespace required");
+                error!("Error: start height and namespace required");
                 return Ok(());
             }
             let start_height = args[2]
@@ -38,7 +43,7 @@ async fn main() -> Result<()> {
         }
         "add-song" => {
             if args.len() < 3 {
-                println!("Error: URL required");
+                error!("URL required");
                 return Ok(());
             }
 
@@ -61,18 +66,20 @@ fn print_usage() {
 }
 
 async fn add_song(client: &reqwest::Client, server_url: &str, url: &str) -> Result<()> {
+    let link = YoutubeLink::new(url.to_string())?;
+
     let response = client
-        .post(&format!("{}/send", server_url))
+        .post(format!("{}/send", server_url))
         .json(&serde_json::json!({
-            "url": url,
+            "url": link.as_str(),
         }))
         .send()
         .await?;
 
     if response.status().is_success() {
-        println!("Song added successfully.");
+        info!("Song added successfully.");
     } else {
-        println!(
+        error!(
             "Failed to add song. Server responded with: {}",
             response.status()
         );

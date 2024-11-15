@@ -5,6 +5,7 @@ use axum::{
 };
 use celestia_rpc::{BlobClient, HeaderClient};
 use celestia_types::{nmt::Namespace, Blob, TxConfig};
+use log::*;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -49,6 +50,7 @@ impl TryFrom<&Blob> for Batch {
     }
 }
 
+#[allow(dead_code)]
 impl FullNode {
     pub async fn new(namespace: Namespace, start_height: u64) -> Result<Self> {
         let da_client = celestia_rpc::Client::new("ws://localhost:26658", None)
@@ -74,7 +76,7 @@ impl FullNode {
             .with_state(self.clone());
 
         let addr = "0.0.0.0:3000";
-        println!("Server listening on {}", addr);
+        info!("Server listening on {}", addr);
         axum::Server::bind(&addr.parse().unwrap())
             .serve(app.into_make_service())
             .await
@@ -101,7 +103,7 @@ impl FullNode {
         let blob = Blob::new(self.namespace, encoded_batch)?;
         BlobClient::blob_submit(&self.da_client, &[blob], TxConfig::default()).await?;
 
-        println!("Batch posted with {} transactions", batch.0.len());
+        debug!("batch posted with {} transactions", batch.0.len());
         Ok(())
     }
 
@@ -111,7 +113,7 @@ impl FullNode {
             .flat_map(|blob| match Batch::try_from(&blob) {
                 Ok(batch) => batch.0,
                 Err(e) => {
-                    eprintln!("Error processing blob: {}", e);
+                    error!("processing blob: {}", e);
                     vec![]
                 }
             })
@@ -120,8 +122,8 @@ impl FullNode {
         let mut state = self.state.lock().await;
         for tx in txs {
             match state.process_tx(tx).await {
-                Ok(_) => println!("Processed transaction"),
-                Err(e) => eprintln!("Error processing tx: {}", e),
+                Ok(_) => info!("processed transaction"),
+                Err(e) => error!("processing tx: {}", e),
             }
         }
     }
@@ -129,14 +131,19 @@ impl FullNode {
     async fn sync_from_genesis(self: Arc<Self>) -> Result<()> {
         let network_head = HeaderClient::header_network_head(&self.da_client).await?;
         let network_height = network_head.height();
+        info!(
+            "processing historical blocks from heights: {}-{}",
+            self.start_height,
+            network_height.value()
+        );
         for height in self.start_height..network_height.value() {
-            println!("Processing block at height: {}", height);
             let response =
                 BlobClient::blob_get_all(&self.da_client, height, &[self.namespace]).await?;
             if let Some(blobs) = response {
                 self.clone().process_l1_block(blobs).await;
             }
         }
+        info!("completed historical block processing");
         self.genesis_sync_complete.store(true, Ordering::SeqCst);
         self.sync_notify.notify_waiters();
         Ok(())
@@ -148,7 +155,7 @@ impl FullNode {
         loop {
             interval.tick().await;
             if let Err(e) = self.clone().post_pending_batch().await {
-                eprintln!("Error posting batch: {}", e);
+                error!("Error posting batch: {}", e);
             }
         }
     }
@@ -168,7 +175,12 @@ impl FullNode {
                 while let Some(result) = blobsub.next().await {
                     match result {
                         Ok(blob_response) => {
-                            println!("Received blobs from DA layer: {:?}", blob_response);
+                            debug!(
+                                "received {} blobs from DA layer: {:?}",
+                                blob_response.blobs.clone().unwrap_or(vec![]).len(),
+                                blob_response.height
+                            );
+                            node.state.lock().await.cleanup_queue();
                             if let Some(blobs) = blob_response.blobs {
                                 if tx.send(blobs).await.is_err() {
                                     break;
@@ -176,7 +188,7 @@ impl FullNode {
                             }
                         }
                         Err(e) => {
-                            println!("Error retrieving blobs from DA layer: {}", e);
+                            error!("retrieving blobs from DA layer: {}", e);
                         }
                     }
                 }
@@ -188,7 +200,7 @@ impl FullNode {
 
         // Process incoming blocks
         while let Some(blobs) = rx.recv().await {
-            println!("Processing incoming blobs");
+            info!("processing incoming blobs");
             self.clone().process_l1_block(blobs).await;
         }
 
