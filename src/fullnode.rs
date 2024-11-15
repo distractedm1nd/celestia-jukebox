@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use axum::{
+    http,
     routing::{get, post},
     Router,
 };
@@ -13,6 +14,9 @@ use std::sync::{
 use tokio::spawn;
 use tokio::sync::{mpsc, Mutex, Notify};
 use tokio::time::{interval, Duration};
+
+use axum::http::Method;
+use tower_http::cors::{Any, CorsLayer};
 
 use crate::{state::State, tx::Transaction, webserver::*};
 use serde::{Deserialize, Serialize};
@@ -69,9 +73,15 @@ impl FullNode {
     }
 
     pub async fn start_server(self: Arc<Self>) -> Result<()> {
+        let cors = CorsLayer::new()
+            .allow_methods([Method::GET, Method::POST])
+            .allow_headers(vec![http::header::CONTENT_TYPE])
+            .allow_origin(Any);
+
         let app = Router::new()
-            .route("/channels", get(get_history))
-            .route("/channels/:channel", get(get_queue))
+            .layer(cors)
+            .route("/history", get(get_history))
+            .route("/queue", get(get_queue))
             .route("/send", post(send_tx))
             .with_state(self.clone());
 
