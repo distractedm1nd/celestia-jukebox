@@ -38,10 +38,10 @@ impl TryFrom<&Blob> for Batch {
     type Error = anyhow::Error;
 
     fn try_from(value: &Blob) -> Result<Self, Self::Error> {
-        match bincode::deserialize(&value.data) {
+        match serde_json::from_slice(&value.data) {
             Ok(batch) => Ok(batch),
             Err(_) => {
-                let transaction: Transaction = bincode::deserialize(&value.data)
+                let transaction: Transaction = serde_json::from_slice(&value.data)
                     .context(format!("Failed to decode blob into Transaction: {value:?}"))?;
 
                 Ok(Batch(vec![transaction]))
@@ -98,7 +98,7 @@ impl FullNode {
         }
 
         let batch = Batch(pending_txs.drain(..).collect());
-        let encoded_batch = bincode::serialize(&batch)?;
+        let encoded_batch = serde_json::to_vec(&batch)?;
 
         let blob = Blob::new(self.namespace, encoded_batch)?;
         BlobClient::blob_submit(&self.da_client, &[blob], TxConfig::default()).await?;

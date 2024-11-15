@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::collections::VecDeque;
 use std::time::{Duration, SystemTime};
 
@@ -58,7 +58,12 @@ impl State {
         }
     }
 
-    pub fn validate_tx(&self, _tx: Transaction) -> Result<()> {
+    pub fn validate_tx(&self, tx: Transaction) -> Result<()> {
+        let Transaction::AddToQueue { url } = tx.clone();
+        let validated_link = YoutubeLink::new(url.as_str().to_string());
+        if validated_link.is_err() {
+            bail!("invalid tx: youtube link failed validation")
+        }
         Ok(())
     }
 
